@@ -423,7 +423,7 @@ bool others::SmartShape::calcIsSlur() const
     return false;
 }
 
-CurveContourDirection others::SmartShape::calcContourDirection() const
+CurveContourDirection others::SmartShape::calcContourDirectionDefault(bool getEffective) const
 {
     using ST = ShapeType;
     switch (shapeType) {
@@ -439,21 +439,70 @@ CurveContourDirection others::SmartShape::calcContourDirection() const
 
     case ST::SlurAuto:
     case ST::DashContourSlurAuto:
-    case ST::DashSlurAuto:
-        if (entryBased) {
-            if (const auto startEntryInfoPtr = startTermSeg->endPoint->calcAssociatedEntry()) {
-                auto [freezeStem, upStem] = startEntryInfoPtr.calcEntryStemSettings();
+    case ST::DashSlurAuto: {
+        if (!getEffective) {
+            return CurveContourDirection::Unspecified;
+        }
+
+        const auto startEntryInfoPtr = startTermSeg->endPoint->calcAssociatedEntry();
+        const auto endEntryInfoPtr = endTermSeg->endPoint->calcAssociatedEntry();
+        MUSX_ASSERT_IF(entryBased && (!startEntryInfoPtr || !endEntryInfoPtr)) {
+            return CurveContourDirection::Unspecified;
+        }
+
+        // Cross-staff or cross-layer chords: Return first match if there is a frozen stem, else up
+        if ((startTermSeg->endPoint->staffId != endTermSeg->endPoint->staffId)
+            || (entryBased && startEntryInfoPtr.getLayerIndex() == endEntryInfoPtr.getLayerIndex())) {
+            CurveContourDirection dir = CurveContourDirection::Up;
+            iterateEntries([&](const EntryInfoPtr& entryInfo) {
+                auto [freezeStem, upStem] = entryInfo.calcEntryStemSettings();
                 if (freezeStem) {
                     // Finale freezes slurs in the direction of a frozen stem on the launch entry.
-                    return upStem ? CurveContourDirection::Up : CurveContourDirection::Down;
+                    dir = upStem ? CurveContourDirection::Up : CurveContourDirection::Down;
+                    return false;
                 }
+                return true;
+            });
+            return dir;
+        }
+
+        // Exception for grace notes moving to (non-frozen) single note chords: Use downwards contour
+        if (startEntryInfoPtr->getEntry()->graceNote && startEntryInfoPtr.calcUpStem()
+            && (endEntryInfoPtr.calcDisplaysAsRest() || endEntryInfoPtr->getEntry()->numNotes == 1)) {
+            auto [freezeStem, upStem] = endEntryInfoPtr.calcEntryStemSettings();
+            if (!freezeStem) {
+                return CurveContourDirection::Down;
             }
         }
-        return CurveContourDirection::Unspecified;
+
+        // Follow the first frozen non-grace stem found.
+        // If no stems are frozen, angle downwards if all stems are upwards, else upwards
+        CurveContourDirection dir = CurveContourDirection::Down;
+        iterateEntries([&](const EntryInfoPtr& entryInfo) {
+            if (entryInfoPtr.calcDisplaysAsRest()) {
+                return true;
+            }
+            auto [freezeStem, upStem] = entryInfo.calcEntryStemSettings();
+            if (!entryInfo->getEntry()->graceNote && freezeStem) {
+                dir = upStem ? CurveContourDirection::Up : CurveContourDirection::Down;
+                return false;
+            }
+            if (!upStem) {
+                dir = CurveContourDirection::Up;
+                return false;
+            }
+            return true;
+        });
+        return dir;
+    }
 
     default:
         return CurveContourDirection::Unspecified;
     }
+}
+
+CurveContourDirection others::SmartShape::calcContourDirectionImpl() const
+{
 }
 
 bool others::SmartShape::calcIsDashed() const

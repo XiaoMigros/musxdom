@@ -402,10 +402,11 @@ public:
 
     /// @brief Determines if a smart shape slur or curve has a fixed direction (up or down) or floats automatically.
     /// @note If the smart shape is not a slur or curve, the return value is `CurveContourDirection::Unspecified`.
-    /// @return The curve contour direction for fixed-direction shapes; `CurveContourDirection::Unspecified` if floating/automatic.
+    /// @param getEffective If true, returns the effective direction for floating/automatic shapes. Else returns `CurveContourDirection::Unspecified`.
+    /// @return The curve contour direction for fixed-direction shapes;
     [[nodiscard]]
-    CurveContourDirection calcContourDirection() const;
-    
+    CurveContourDirection calcContourDirection(bool getEffective = false) const;
+
     /// @brief Returns true if the smart shape's #ShapeType uses a dashed line style.
     /// @return True when the shape type is dashed; false otherwise.
     [[nodiscard]]
